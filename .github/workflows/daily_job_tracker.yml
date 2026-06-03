@@ -1,1 +1,48 @@
+name: Daily Job Tracker
 
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Search past N days (use 7 for first run)"
+        default: "1"
+        required: false
+      dry_run:
+        description: "Dry run - preview email without sending (true/false)"
+        default: "false"
+        required: false
+
+jobs:
+  run-job-tracker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 lxml
+      - name: Run job tracker
+        env:
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASS: ${{ secrets.GMAIL_APP_PASS }}
+        run: |
+          DAYS="${{ github.event.inputs.days || '1' }}"
+          DRY="${{ github.event.inputs.dry_run || 'false' }}"
+          ARGS="--days $DAYS"
+          if [ "$DRY" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          python main.py $ARGS
+      - name: Commit jobs.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add jobs.json || true
+          git diff --staged --quiet || git commit -m "update jobs.json $(date -u +'%Y-%m-%d')"
+          git push || echo "Nothing to push"
